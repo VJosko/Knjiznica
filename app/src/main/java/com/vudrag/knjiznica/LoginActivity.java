@@ -1,17 +1,29 @@
 package com.vudrag.knjiznica;
 
+import static com.vudrag.knjiznica.Config.AUTH_TOKEN;
+import static com.vudrag.knjiznica.Config.AUTH_TOKEN_PREFERENCES;
+import static com.vudrag.knjiznica.Config.BASE_URL;
+
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.textfield.TextInputLayout;
+import com.vudrag.knjiznica.api.LoginApi;
+import com.vudrag.knjiznica.dataObjects.AuthToken;
+import com.vudrag.knjiznica.dataObjects.LoginData;
 import com.vudrag.knjiznica.search.SearchActivity;
 
-import java.util.HashMap;
-import java.util.Map;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 public class LoginActivity extends AppCompatActivity {
 
@@ -21,7 +33,7 @@ public class LoginActivity extends AppCompatActivity {
     private TextView titleTv;
     private TextView loginTv;
     private TextView registerTv;
-    private TextInputLayout emailTxt;
+    private TextInputLayout usernameTxt;
     private TextInputLayout passwordTxt;
     private Button loginBtn;
 
@@ -34,65 +46,100 @@ public class LoginActivity extends AppCompatActivity {
         setOnclickListeners();
     }
 
-    private void findViews(){
+    private void findViews() {
         titleTv = findViewById(R.id.login_title_tv);
         loginTv = findViewById(R.id.login_login_tv);
         registerTv = findViewById(R.id.login_register_tv);
-        emailTxt = findViewById(R.id.login_email_txt);
+        usernameTxt = findViewById(R.id.login_username_txt);
         passwordTxt = findViewById(R.id.login_password_txt);
         loginBtn = findViewById(R.id.login_login_btn);
     }
 
-    private void setOnclickListeners(){
+    private void setOnclickListeners() {
         switchToRegisterOnClickListener();
         loginOnClickListener();
     }
 
-    private void switchToRegisterOnClickListener(){
+    private void switchToRegisterOnClickListener() {
         registerTv.setOnClickListener(view -> {
             Intent intent = new Intent(LoginActivity.this, RegisterActivity.class);
             startActivity(intent);
         });
     }
 
-    private void loginOnClickListener(){
+    private void loginOnClickListener() {
         loginBtn.setOnClickListener(view -> {
-            if(!isUserInputValid()){
+            if (!isUserInputValid()) {
                 return;
             }
-            Intent intent = new Intent(LoginActivity.this, SearchActivity.class);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(intent);
+            LoginData loginData = getUserInput();
+            login(loginData);
         });
     }
 
-    private boolean isUserInputValid(){
-        emailTxt.setErrorEnabled(false);
+    private boolean isUserInputValid() {
+        usernameTxt.setErrorEnabled(false);
         passwordTxt.setErrorEnabled(false);
 
-        Map<String, String> userInput = getUserInput();
+        LoginData loginData = getUserInput();
         boolean isValid = true;
-        if(userInput.get(EMAIL).isEmpty()){
-            emailTxt.setError("Required!");
+        if (loginData.getUsername().isEmpty()) {
+            usernameTxt.setError("Required!");
             isValid = false;
         }
-        else if(!android.util.Patterns.EMAIL_ADDRESS.matcher(userInput.get(EMAIL)).matches()){
-            emailTxt.setError("Email is not valid!");
-            isValid = false;
-        }
-        if(userInput.get(PASSWORD).isEmpty()){
+        if (loginData.getPassword().isEmpty()) {
             passwordTxt.setError("Required!");
             isValid = false;
         }
         return isValid;
     }
 
-    private Map<String, String> getUserInput(){
-        Map<String, String> userInput = new HashMap<>();
-        String email = emailTxt.getEditText().getText().toString().trim();
-        userInput.put(EMAIL, email);
+    private LoginData getUserInput() {
+        LoginData loginData = new LoginData();
+        String username = usernameTxt.getEditText().getText().toString().trim();
+        loginData.setUsername(username);
         String password = passwordTxt.getEditText().getText().toString().trim();
-        userInput.put(PASSWORD, password);
-        return userInput;
+        loginData.setPassword(password);
+        return loginData;
+    }
+
+
+    private void login(LoginData loginData) {
+        String baseUrl = BASE_URL;
+
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        LoginApi loginApi = retrofit.create(LoginApi.class);
+        Call<AuthToken> call = loginApi.login(loginData);
+        call.enqueue(new Callback<AuthToken>() {
+            @Override
+            public void onResponse(Call<AuthToken> call, Response<AuthToken> response) {
+                if (response.isSuccessful()) {
+                    Log.d("TAG", "onResponse: _____" + response.body().getToken());
+                    saveTokenToSharedPrefs(response.body());
+                    Intent intent = new Intent(LoginActivity.this, SearchActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } else
+                    Log.d("TAG", "onResponse: _____" + response.message());
+            }
+
+            @Override
+            public void onFailure(Call<AuthToken> call, Throwable t) {
+                Log.d("TAG", "onFailure: ____" + t.getMessage());
+            }
+        });
+
+    }
+
+    private void saveTokenToSharedPrefs(AuthToken authToken) {
+        SharedPreferences sharedPref = this.getSharedPreferences(AUTH_TOKEN_PREFERENCES, this.MODE_PRIVATE);
+
+        SharedPreferences.Editor editor = sharedPref.edit();
+        editor.putString(AUTH_TOKEN, authToken.getToken());
+        editor.apply();
     }
 }
